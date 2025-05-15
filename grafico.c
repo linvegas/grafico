@@ -8,11 +8,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define GL_MAX_TEX_UNITS     32
-#define GL_ELEM_VERTICES_CAP 128*1024
-#define GL_ELEM_INDICES_CAP  128*1024
-#define SHADER_INFO_LOG_CAP  1024
-
 #define max(x, y) ((x) > (y) ? (x) : (y))
 
 typedef struct mat4{
@@ -50,25 +45,6 @@ mat4 mat4_ortho(int width, int height)
 
     return mat;
 }
-
-typedef struct Vertex {
-    vec2  pos;
-    vec2  uv;
-    vec3  color;
-    float tex_id;
-} Vertex;
-
-typedef struct State {
-    GLFWwindow *window;
-    GLuint vao;
-    GLuint vbo;
-    GLuint ebo;
-    GLuint shader;
-    Vertex vertices[GL_ELEM_VERTICES_CAP];
-    GLuint indices[GL_ELEM_INDICES_CAP];
-    size_t vert_len;
-    size_t indice_len;
-} State;
 
 State state = {0};
 
@@ -194,6 +170,11 @@ Texture load_texture_from_image(const char *file_path)
     return t;
 }
 
+void error_callback(int error, const char *description)
+{
+    fprintf(stderr, "ERROR %d: %s\n", error, description);
+}
+
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
     (void)window;
@@ -215,58 +196,13 @@ void character_callback(GLFWwindow* window, unsigned int codepoint)
     // printf("%c\n", codepoint);
 }
 
-void init_arrays(void)
-{
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    glGenVertexArrays(1, &state.vao);
-    glBindVertexArray(state.vao);
-
-    glGenBuffers(1, &state.vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, state.vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*GL_ELEM_VERTICES_CAP, state.vertices, GL_DYNAMIC_DRAW);
-
-    glGenBuffers(1, &state.ebo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, state.ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint)*GL_ELEM_INDICES_CAP, state.indices, GL_DYNAMIC_DRAW);
-
-    GLint vpos_loc = glGetAttribLocation(state.shader, "vertexPos");
-    GLint vtuv_loc = glGetAttribLocation(state.shader, "vertexUv");
-    GLint vcol_loc = glGetAttribLocation(state.shader, "vertexColor");
-    GLint vtid_loc = glGetAttribLocation(state.shader, "vertexTexId");
-
-    glEnableVertexAttribArray(vpos_loc);
-    glVertexAttribPointer(vpos_loc, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, pos));
-
-    glEnableVertexAttribArray(vtuv_loc);
-    glVertexAttribPointer(vtuv_loc, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, uv));
-
-    glEnableVertexAttribArray(vcol_loc);
-    glVertexAttribPointer(vcol_loc, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, color));
-
-    glEnableVertexAttribArray(vtid_loc);
-    glVertexAttribPointer(vtid_loc, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, tex_id));
-
-    int tex_slots[GL_MAX_TEX_UNITS] = {0};
-    for (int i = 0; i < GL_MAX_TEX_UNITS; i++) tex_slots[i] = i;
-
-    glUseProgram(state.shader);
-    glUniform1iv(glGetUniformLocation(state.shader, "tex"), GL_MAX_TEX_UNITS, tex_slots);
-}
-
-int window_is_open(void)
-{
-    return !glfwWindowShouldClose(state.window);
-}
-
 void vertex_push(vec2 pos, vec2 uv, vec3 color, float tex_id)
 {
-    state.vertices[state.vert_len].pos    = pos;
-    state.vertices[state.vert_len].uv     = uv;
-    state.vertices[state.vert_len].color  = color;
-    state.vertices[state.vert_len].tex_id = tex_id;
-    state.vert_len += 1;
+    state.renderer.vertices.data[state.renderer.vertices.len].pos    = pos;
+    state.renderer.vertices.data[state.renderer.vertices.len].uv     = uv;
+    state.renderer.vertices.data[state.renderer.vertices.len].color  = color;
+    state.renderer.vertices.data[state.renderer.vertices.len].tex_id = tex_id;
+    state.renderer.vertices.len += 1;
 }
 
 void draw_rectangle_vec(vec2 pos, vec2 size, Color color, GLuint id)
@@ -283,16 +219,16 @@ void draw_rectangle_vec(vec2 pos, vec2 size, Color color, GLuint id)
     vertex_push(vec2(rect_w, rect_h), vec2(1, 0), col, id); // BOTTOM RIGHT
     vertex_push(vec2(rect_w, rect_y), vec2(1, 1), col, id); // TOP RIGHT
 
-    unsigned int i = state.indice_len > 0 ? state.indices[state.indice_len-1]+1 : 0;
+    unsigned int i = state.renderer.indices.len > 0 ? state.renderer.indices.data[state.renderer.indices.len-1]+1 : 0;
 
-    state.indices[state.indice_len]     = i;
-    state.indices[state.indice_len + 1] = i + 1;
-    state.indices[state.indice_len + 2] = i + 2;
-    state.indices[state.indice_len + 3] = i + 1;
-    state.indices[state.indice_len + 4] = i + 2;
-    state.indices[state.indice_len + 5] = i + 3;
+    state.renderer.indices.data[state.renderer.indices.len]     = i;
+    state.renderer.indices.data[state.renderer.indices.len + 1] = i + 1;
+    state.renderer.indices.data[state.renderer.indices.len + 2] = i + 2;
+    state.renderer.indices.data[state.renderer.indices.len + 3] = i + 1;
+    state.renderer.indices.data[state.renderer.indices.len + 4] = i + 2;
+    state.renderer.indices.data[state.renderer.indices.len + 5] = i + 3;
 
-    state.indice_len += 6;
+    state.renderer.indices.len += 6;
 }
 
 void draw_text_vec(Texture tex, const char *text, vec2 pos, float scale, Color color)
@@ -314,16 +250,16 @@ void draw_text_vec(Texture tex, const char *text, vec2 pos, float scale, Color c
         vertex_push((vec2){ rect_x + rect_w, rect_y + rect_h }, vec2(g.offset + g.size.x / tex.width, g.size.y / tex.height), col, tex.id); // BOTTOM RIGHT
         vertex_push((vec2){ rect_x + rect_w, rect_y }, vec2(g.offset + g.size.x / tex.width, 0), col, tex.id); // TOP RIGHT
 
-        unsigned int i = state.indice_len > 0 ? state.indices[state.indice_len-1]+1 : 0;
+        unsigned int i = state.renderer.indices.len > 0 ? state.renderer.indices.data[state.renderer.indices.len-1]+1 : 0;
 
-        state.indices[state.indice_len]     = i;
-        state.indices[state.indice_len + 1] = i + 1;
-        state.indices[state.indice_len + 2] = i + 2;
-        state.indices[state.indice_len + 3] = i + 1;
-        state.indices[state.indice_len + 4] = i + 2;
-        state.indices[state.indice_len + 5] = i + 3;
+        state.renderer.indices.data[state.renderer.indices.len]     = i;
+        state.renderer.indices.data[state.renderer.indices.len + 1] = i + 1;
+        state.renderer.indices.data[state.renderer.indices.len + 2] = i + 2;
+        state.renderer.indices.data[state.renderer.indices.len + 3] = i + 1;
+        state.renderer.indices.data[state.renderer.indices.len + 4] = i + 2;
+        state.renderer.indices.data[state.renderer.indices.len + 5] = i + 3;
 
-        state.indice_len += 6;
+        state.renderer.indices.len += 6;
 
         pos.x += g.advance.x * scale;
         if (*c == '\n') pos.y += tex.height, pos.x = init_posx;
@@ -332,17 +268,9 @@ void draw_text_vec(Texture tex, const char *text, vec2 pos, float scale, Color c
 
 void draw_texture_vec(Texture tex, vec2 pos, float scale, Color color)
 {
-    // renderer_texture(&state.renderer, tex.id);
-
     vec2 size = { (float)tex.width*scale, (float)tex.height*scale };
 
     draw_rectangle_vec(pos, size, color, tex.id);
-}
-
-void clear_background(void)
-{
-    glClearColor(0.11f, 0.11f, 0.11f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
 }
 
 vec2 get_fb_size(void)
@@ -352,36 +280,80 @@ vec2 get_fb_size(void)
     return vec2(w,h);
 }
 
-void render_draw(void)
+void renderer_render(Renderer *r)
 {
     vec2 win_size = get_fb_size();
 
     mat4 projection = mat4_ortho((int)win_size.x, (int)win_size.y);
-    glUniformMatrix4fv(glGetUniformLocation(state.shader, "projection"), 1, GL_FALSE, (void *)&projection);
-    glUseProgram(state.shader);
+    glUniformMatrix4fv(glGetUniformLocation(r->shader, "projection"), 1, GL_FALSE, (void *)&projection);
+    glUseProgram(r->shader);
 
-    glBindBuffer(GL_ARRAY_BUFFER, state.vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(Vertex) * state.vert_len, state.vertices);
+    glBindBuffer(GL_ARRAY_BUFFER, r->vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(Vertex) * r->vertices.len, r->vertices.data);
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, state.ebo);
-    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, sizeof(GLuint) * state.indice_len, state.indices);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r->ebo);
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, sizeof(GLuint) * r->indices.len, r->indices.data);
 
     for (int i = 0; i < GL_MAX_TEX_UNITS; i++) {
         glBindTextureUnit(i, i);
     }
 
-    glDrawElements(GL_TRIANGLES, state.indice_len, GL_UNSIGNED_INT, (GLvoid *)0);
+    glDrawElements(GL_TRIANGLES, r->indices.len, GL_UNSIGNED_INT, (GLvoid *)0);
 
-    state.indice_len = 0;
-    state.vert_len = 0;
-
-    glfwSwapBuffers(state.window);
-    glfwWaitEvents(); // or glfwPollEvents() ?
+    r->indices.len = 0;
+    r->vertices.len = 0;
 }
 
+Renderer renderer_init(void) // TODO: Init textures
+{
+    Renderer r = {0};
+
+    r.shader = shader_program();
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glGenVertexArrays(1, &r.vao);
+    glBindVertexArray(r.vao);
+
+    glGenBuffers(1, &r.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, r.vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex)*GL_ELEM_VERTICES_CAP, r.vertices.data, GL_DYNAMIC_DRAW);
+
+    glGenBuffers(1, &r.ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r.ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint)*GL_ELEM_INDICES_CAP, r.indices.data, GL_DYNAMIC_DRAW);
+
+    GLint vpos_loc = glGetAttribLocation(r.shader, "vertexPos");
+    GLint vtuv_loc = glGetAttribLocation(r.shader, "vertexUv");
+    GLint vcol_loc = glGetAttribLocation(r.shader, "vertexColor");
+    GLint vtid_loc = glGetAttribLocation(r.shader, "vertexTexId");
+
+    glEnableVertexAttribArray(vpos_loc);
+    glVertexAttribPointer(vpos_loc, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, pos));
+
+    glEnableVertexAttribArray(vtuv_loc);
+    glVertexAttribPointer(vtuv_loc, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, uv));
+
+    glEnableVertexAttribArray(vcol_loc);
+    glVertexAttribPointer(vcol_loc, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, color));
+
+    glEnableVertexAttribArray(vtid_loc);
+    glVertexAttribPointer(vtid_loc, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, tex_id));
+
+    int tex_slots[GL_MAX_TEX_UNITS] = {0};
+    for (int i = 0; i < GL_MAX_TEX_UNITS; i++) tex_slots[i] = i;
+
+    glUseProgram(r.shader);
+    glUniform1iv(glGetUniformLocation(r.shader, "tex"), GL_MAX_TEX_UNITS, tex_slots);
+
+    return r;
+}
 
 int init_window(int width, int height, const char *title)
 {
+    glfwSetErrorCallback(error_callback);
+
     if (!glfwInit()) return -1;
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -402,21 +374,37 @@ int init_window(int width, int height, const char *title)
     // glfwSetWindowRefreshCallback(state.window, window_refresh_callback);
 
     glfwMakeContextCurrent(state.window);
-    // glfwSwapInterval(1);
 
     int max_elem_vert = 0;
     glGetIntegerv(GL_MAX_ELEMENTS_VERTICES, &max_elem_vert);
     printf("[INFO] OpenGL Version: %s\n", glGetString(GL_VERSION));
     printf("[INFO] Max Elements Vertices: %d\n", max_elem_vert);
 
-    state.shader = compile_shaders();
-
-    init_arrays();
+    state.renderer = renderer_init();
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClearDepth(1.0f);
 
     return 0;
+}
+
+int window_is_open(void)
+{
+    return !glfwWindowShouldClose(state.window);
+}
+
+void clear_background(void)
+{
+    glClearColor(0.11f, 0.11f, 0.11f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+}
+
+void render(void)
+{
+    renderer_render(&state.renderer);
+
+    glfwSwapBuffers(state.window);
+    glfwWaitEvents(); // or glfwPollEvents()
 }
 
 char *str_from_file(const char *file_path)
@@ -448,54 +436,60 @@ char *str_from_file(const char *file_path)
     return buffer;
 }
 
-GLuint compile_shaders(void)
+GLuint create_shader(const char *filepath, int type)
 {
-    char *vertex_shader_src = str_from_file("shader.vert");
+    char *shader_src = str_from_file(filepath);
 
-    if (!vertex_shader_src) exit(1);
+    if (!shader_src) exit(1);
 
-    GLuint vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, (const char **)&vertex_shader_src, NULL);
-    glCompileShader(vertex_shader);
+    GLuint shader = glCreateShader(type);
 
-    free(vertex_shader_src);
+    glShaderSource(shader, 1, (const char **)&shader_src, NULL);
+    glCompileShader(shader);
+
+    free(shader_src);
 
     int success;
     char info_log[SHADER_INFO_LOG_CAP];
 
-    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+
     if (!success) {
-        glGetShaderInfoLog(vertex_shader, SHADER_INFO_LOG_CAP, NULL, info_log);
-        fprintf(stderr, "ERROR: Vertex shader:\n%s", info_log);
+        glGetShaderInfoLog(shader, SHADER_INFO_LOG_CAP, NULL, info_log);
+        fprintf(stderr, "[ERROR] Shader Compilation:\n%s", info_log);
     }
 
-    char *fragment_shader_src = str_from_file("shader.frag");
+    return shader;
+}
 
-    if (!fragment_shader_src) exit(1);
+GLuint create_program(GLuint v_shader, GLuint f_shader)
+{
+    GLuint program = glCreateProgram();
 
-    GLuint fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, (const char **)&fragment_shader_src, NULL);
-    glCompileShader(fragment_shader);
+    glAttachShader(program, v_shader);
+    glAttachShader(program, f_shader);
 
-    free(fragment_shader_src);
+    glLinkProgram(program);
 
-    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
+    int success;
+    char info_log[SHADER_INFO_LOG_CAP];
+
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+
     if (!success) {
-        glGetShaderInfoLog(fragment_shader, SHADER_INFO_LOG_CAP, NULL, info_log);
-        fprintf(stderr, "ERROR: Fragment shader:\n%s", info_log);
+        glGetProgramInfoLog(program, SHADER_INFO_LOG_CAP, NULL, info_log);
+        fprintf(stderr, "[ERROR] Shader Linking:\n%s", info_log);
     }
 
-    GLuint shader_prg = glCreateProgram();
+    return program;
+}
 
-    glAttachShader(shader_prg, vertex_shader);
-    glAttachShader(shader_prg, fragment_shader);
-    glLinkProgram(shader_prg);
+GLuint shader_program(void)
+{
+    GLuint vertex_shader = create_shader("shader.vert", GL_VERTEX_SHADER);
+    GLuint fragment_shader = create_shader("shader.frag", GL_FRAGMENT_SHADER);
 
-    glGetProgramiv(shader_prg, GL_LINK_STATUS, &success);
-    if (!success) {
-        glGetProgramInfoLog(shader_prg, SHADER_INFO_LOG_CAP, NULL, info_log);
-        fprintf(stderr, "ERROR: Shader linking:\n%s", info_log);
-    }
+    GLuint shader_prg = create_program(vertex_shader, fragment_shader);
 
     glDeleteShader(vertex_shader);
     glDeleteShader(fragment_shader);

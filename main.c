@@ -17,7 +17,8 @@ int main()
         draw_rectangle_vec(vec2(win_size.x/2-220, win_size.y/2+24), vec2(440, 70), color(67,67,67), 0);
         draw_text_vec(font_tex, "Hello from Grafico", vec2(win_size.x/2 - 215, win_size.y/2 + 30), 1.0, color(155,255,170));
 
-        render_draw();
+        // render_draw();
+        render();
     }
 
     return 0;
